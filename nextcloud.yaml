@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextcloud
+spec:
+  selector:
+    matchLabels:
+      app: nextcloud
+  strategy:
+    type: Recreate
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: nextcloud
+    spec:
+      containers:
+
+      - name: nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx2.conf
+        - name: docker
+          mountPath: /var/www/html
+          subPath: nextcloud/nextcloud
+        lifecycle:
+          postStart:
+            exec:
+             command: ["bin/sh", "-c", "mkdir -p /var/www/html"]
+
+      - name: nextcloud
+        image: nextcloud:fpm
+        env:
+        - name: TZ
+          value: "Europe/Paris"
+        - name: MYSQL_PASSWORD
+          value: "nextcloud"
+        - name: MYSQL_DATABASE
+          value: "nextcloud"
+        - name: MYSQL_USER
+          value: "nextcloud"
+        - name: MYSQL_HOST
+          value: "127.0.0.1"  
+        - name: NEXTCLOUD_TRUSTED_DOMAINS
+          value: "cloud.landcenter.ovh"
+        - name: TRUSTED_PROXIES
+          value: "192.168.0.0/24"  
+        - name: NEXTCLOUD_ADMIN_USER
+          value: "admin"  
+        - name: NEXTCLOUD_ADMIN_PASSWORD 
+          value: "admin"
+        - name: NEXTCLOUD_UPDATE 
+          value: "1"               
+        ports:
+        - containerPort: 9000
+        volumeMounts:
+        - mountPath: /var/www/html
+          name: docker
+          subPath: nextcloud/nextcloud
+
+      - name: mariadb
+        image: mariadb
+        env:
+        - name: TZ
+          value: "Europe/Paris"
+        - name: MYSQL_ROOT_PASSWORD
+          value: "nextcloud"
+        - name: MYSQL_PASSWORD
+          value: "nextcloud"
+        - name: MYSQL_DATABASE
+          value: "nextcloud"
+        - name: MYSQL_USER
+          value: "nextcloud"
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: docker
+          subPath: nextcloud/mariadb
+         - mountPath: /etc/mysql/conf.d/myconfig.cnf:ro
+          name: docker
+          subPath: nextcloud/mariadb/myconfig.cnf
+          readOnly: true
+      
+      restartPolicy: Always
+      volumes:
+      - name: docker
+        persistentVolumeClaim:
+          claimName: docker-nfs-41
+      - name: media
+        persistentVolumeClaim:
+          claimName: media-nfs-41
+      - name : nginx-config
+        configMap:
+           name: nginx-config
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: nextcloud2-tcp-service
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "true"
+spec:
+  selector:
+    app: nextcloud2
+  type: LoadBalancer
+  loadBalancerIP: 192.168.10.249
+  ports:
+  - name: 80-tcp
+    port: 80
+    protocol: TCP
+    targetPort: 80
